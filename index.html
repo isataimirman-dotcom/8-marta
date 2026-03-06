@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Весеннее приключение червячка</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Pacifico&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #fff5f7;
+            font-family: 'Montserrat', sans-serif;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            background-color: #ffffff;
+            box-shadow: 0 10px 25px rgba(255, 105, 180, 0.2);
+            border-radius: 15px;
+            max-width: 95vw;
+            max-height: 70vh;
+            border: 4px solid #ffb6c1;
+        }
+
+        .congrats-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            animation: fadeIn 1s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .congrats-text {
+            font-family: 'Pacifico', cursive;
+            color: #ff1493;
+            font-size: 3rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-gap: 10px;
+            margin-top: 20px;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background: #ffb6c1;
+            border: none;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+            box-shadow: 0 4px #ff8da1;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .control-btn:active {
+            box-shadow: 0 0 #ff8da1;
+            transform: translateY(4px);
+        }
+
+        #score-display {
+            font-size: 1.5rem;
+            color: #ff1493;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .heart {
+            color: #ff1493;
+            display: inline-block;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h1 class="text-3xl font-bold text-pink-500 mb-2">Собери 20 розочек! <span class="heart">🌹</span></h1>
+    <div id="score-display">Счёт: 0 / 200</div>
+    
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Controls for mobile -->
+    <div class="controls lg:hidden">
+        <div></div>
+        <button class="control-btn" id="upBtn">↑</button>
+        <div></div>
+        <button class="control-btn" id="leftBtn">←</button>
+        <button class="control-btn" id="downBtn">↓</button>
+        <button class="control-btn" id="rightBtn">→</button>
+    </div>
+    
+    <p class="mt-4 text-gray-500 hidden lg:block text-sm">Используйте стрелки на клавиатуре для управления</p>
+</div>
+
+<div id="congrats" class="congrats-overlay">
+    <div class="congrats-text">С 8 Марта!</div>
+    <div class="text-xl text-pink-600 px-6 mb-8 max-w-md">
+        Пусть твоя жизнь будет наполнена ароматом цветов, радостью и теплом! Ты прошла это испытание, собрав все розы!
+    </div>
+    <button onclick="location.reload()" class="bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-8 rounded-full transition-all shadow-lg transform hover:scale-105">
+        Играть снова
+    </button>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score-display');
+    const congratsOverlay = document.getElementById('congrats');
+
+    // Настройки сетки
+    const gridSize = 20;
+    let tileCountX, tileCountY;
+
+    function resizeCanvas() {
+        const padding = 40;
+        const availableWidth = Math.min(window.innerWidth - padding, 400);
+        const availableHeight = Math.min(window.innerHeight - 300, 400);
+        
+        canvas.width = Math.floor(availableWidth / gridSize) * gridSize;
+        canvas.height = Math.floor(availableHeight / gridSize) * gridSize;
+        
+        tileCountX = canvas.width / gridSize;
+        tileCountY = canvas.height / gridSize;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Состояние игры
+    let score = 0;
+    const targetScore = 200;
+    let dx = 0;
+    let dy = 0;
+    let nextDx = 0;
+    let nextDy = 0;
+
+    let worm = [
+        {x: 10, y: 10},
+        {x: 10, y: 11},
+        {x: 10, y: 12}
+    ];
+
+    let food = {x: 5, y: 5};
+    let gameLoop;
+    let gameStarted = false;
+
+    function createFood() {
+        food.x = Math.floor(Math.random() * tileCountX);
+        food.y = Math.floor(Math.random() * tileCountY);
+        
+        // Проверка, чтобы еда не появилась на червячке
+        worm.forEach(part => {
+            if(part.x === food.x && part.y === food.y) createFood();
+        });
+    }
+
+    function drawWorm() {
+        worm.forEach((part, index) => {
+            // Рисуем тело червячка градиентом от зеленого к светло-зеленому
+            ctx.fillStyle = index === 0 ? '#4CAF50' : '#8BC34A';
+            ctx.beginPath();
+            ctx.roundRect(part.x * gridSize + 1, part.y * gridSize + 1, gridSize - 2, gridSize - 2, 5);
+            ctx.fill();
+            
+            // Рисуем глазки на голове
+            if (index === 0) {
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(part.x * gridSize + 6, part.y * gridSize + 6, 2, 0, Math.PI * 2);
+                ctx.arc(part.x * gridSize + 14, part.y * gridSize + 6, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    }
+
+    function drawFood() {
+        // Рисуем розу (эмодзи или упрощенная фигура)
+        const centerX = food.x * gridSize + gridSize / 2;
+        const centerY = food.y * gridSize + gridSize / 2;
+        
+        // Стебель
+        ctx.strokeStyle = '#2e7d32';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY + 2);
+        ctx.lineTo(centerX, centerY + 8);
+        ctx.stroke();
+
+        // Бутон розы
+        ctx.fillStyle = '#ff1493';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY - 2, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Лепестки (простой блик)
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY - 2, 3, 0, Math.PI);
+        ctx.stroke();
+    }
+
+    function moveWorm() {
+        dx = nextDx;
+        dy = nextDy;
+
+        if (dx === 0 && dy === 0) return;
+
+        const head = {x: worm[0].x + dx, y: worm[0].y + dy};
+
+        // Проверка столкновения со стенами
+        if (head.x < 0) head.x = tileCountX - 1;
+        if (head.x >= tileCountX) head.x = 0;
+        if (head.y < 0) head.y = tileCountY - 1;
+        if (head.y >= tileCountY) head.y = 0;
+
+        // Проверка столкновения с самим собой
+        for (let i = 0; i < worm.length; i++) {
+            if (worm[i].x === head.x && worm[i].y === head.y) {
+                resetGame();
+                return;
+            }
+        }
+
+        worm.unshift(head);
+
+        // Проверка поедания розы
+        if (head.x === food.x && head.y === food.y) {
+            score += 10;
+            updateScoreDisplay();
+            createFood();
+            if (score >= targetScore) {
+                winGame();
+            }
+        } else {
+            worm.pop();
+        }
+    }
+
+    function resetGame() {
+        score = 0;
+        updateScoreDisplay();
+        dx = 0; dy = 0;
+        nextDx = 0; nextDy = 0;
+        worm = [
+            {x: 10, y: 10},
+            {x: 10, y: 11},
+            {x: 10, y: 12}
+        ];
+        createFood();
+    }
+
+    function updateScoreDisplay() {
+        scoreDisplay.textContent = `Счёт: ${score} / ${targetScore}`;
+    }
+
+    function winGame() {
+        clearInterval(gameLoop);
+        congratsOverlay.style.display = 'flex';
+        createConfetti();
+    }
+
+    function main() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Рисуем легкую сетку фона
+        ctx.strokeStyle = '#fff0f3';
+        ctx.lineWidth = 0.5;
+        for(let i=0; i<canvas.width; i+=gridSize) {
+            ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+        }
+        for(let i=0; i<canvas.height; i+=gridSize) {
+            ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); ctx.stroke();
+        }
+
+        moveWorm();
+        drawFood();
+        drawWorm();
+    }
+
+    // Управление
+    function handleInput(key) {
+        if (!gameStarted) gameStarted = true;
+        
+        switch(key) {
+            case 'ArrowUp': if (dy !== 1) { nextDx = 0; nextDy = -1; } break;
+            case 'ArrowDown': if (dy !== -1) { nextDx = 0; nextDy = 1; } break;
+            case 'ArrowLeft': if (dx !== 1) { nextDx = -1; nextDy = 0; } break;
+            case 'ArrowRight': if (dx !== -1) { nextDx = 1; nextDy = 0; } break;
+        }
+    }
+
+    window.addEventListener('keydown', e => handleInput(e.key));
+    
+    // Кнопки для мобильных
+    document.getElementById('upBtn').onclick = () => handleInput('ArrowUp');
+    document.getElementById('downBtn').onclick = () => handleInput('ArrowDown');
+    document.getElementById('leftBtn').onclick = () => handleInput('ArrowLeft');
+    document.getElementById('rightBtn').onclick = () => handleInput('ArrowRight');
+
+    // Эффект конфетти
+    function createConfetti() {
+        const colors = ['#ff1493', '#ff69b4', '#ffb6c1', '#ffffff', '#4CAF50'];
+        for (let i = 0; i < 100; i++) {
+            const div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.zIndex = '101';
+            div.style.width = Math.random() * 10 + 5 + 'px';
+            div.style.height = Math.random() * 10 + 5 + 'px';
+            div.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            div.style.left = Math.random() * 100 + 'vw';
+            div.style.top = '-10px';
+            div.style.borderRadius = '50%';
+            div.style.transform = `rotate(${Math.random() * 360}deg)`;
+            
+            document.body.appendChild(div);
+
+            const animation = div.animate([
+                { transform: `translate3d(0, 0, 0) rotate(0deg)`, opacity: 1 },
+                { transform: `translate3d(${(Math.random() - 0.5) * 200}px, 100vh, 0) rotate(${Math.random() * 360}deg)`, opacity: 0 }
+            ], {
+                duration: Math.random() * 3000 + 2000,
+                easing: 'cubic-bezier(0, .9, .57, 1)'
+            });
+
+            animation.onfinish = () => div.remove();
+        }
+    }
+
+    createFood();
+    gameLoop = setInterval(main, 120);
+
+</script>
+
+</body>
+</html>
